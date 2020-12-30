@@ -1062,6 +1062,9 @@ Value Eval::evaluate(const Position& pos) {
     Value eval = mg_value(score) * int(me->game_phase())
                + eg_value(score) * int(PHASE_MIDGAME - me->game_phase());
 
+    // Finish Interpolation
+    eval = eval / PHASE_MIDGAME;
+
     // Damp down the evaluation linearly when shuffling
     eval = eval * (100 - pos.rule50_count()) / 100;
 
