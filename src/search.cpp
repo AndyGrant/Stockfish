@@ -882,6 +882,7 @@ namespace {
                                                                           [to_sq(move)];
 
                 pos.do_move(move, st);
+                prefetch(TT.first_entry(pos.key()));
 
                 // Perform a preliminary qsearch to verify that the move holds
                 value = -qsearch<NonPV>(pos, ss+1, -probCutBeta, -probCutBeta+1);
@@ -1133,9 +1134,6 @@ moves_loop: // When in check, search starts here
       newDepth += extension;
       ss->doubleExtensions = (ss-1)->doubleExtensions + (extension == 2);
 
-      // Speculative prefetch as early as possible
-      prefetch(TT.first_entry(pos.key_after(move)));
-
       // Update the current move (this must be done after singular extension search)
       ss->currentMove = move;
       ss->continuationHistory = &thisThread->continuationHistory[ss->inCheck]
@@ -1145,6 +1143,7 @@ moves_loop: // When in check, search starts here
 
       // Step 16. Make the move
       pos.do_move(move, st, givesCheck);
+      prefetch(TT.first_entry(pos.key()));
 
       // Decrease reduction if position is or has been on the PV
       // and node is not likely to fail low. (~3 Elo)
@@ -1593,9 +1592,6 @@ moves_loop: // When in check, search starts here
           continue;
     }
 
-      // Speculative prefetch as early as possible
-      prefetch(TT.first_entry(pos.key_after(move)));
-
       // Update the current move
       ss->currentMove = move;
       ss->continuationHistory = &thisThread->continuationHistory[ss->inCheck]
@@ -1607,6 +1603,7 @@ moves_loop: // When in check, search starts here
 
       // Step 7. Make and search the move
       pos.do_move(move, st, givesCheck);
+      prefetch(TT.first_entry(pos.key()));
       value = -qsearch<nodeType>(pos, ss+1, -beta, -alpha, depth - 1);
       pos.undo_move(move);
 

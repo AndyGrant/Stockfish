@@ -148,7 +148,6 @@ public:
 
   // Accessing hash keys
   Key key() const;
-  Key key_after(Move m) const;
   Key material_key() const;
   Key pawn_key() const;
 
