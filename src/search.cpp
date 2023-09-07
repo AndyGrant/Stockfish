@@ -544,7 +544,7 @@ namespace {
     Key posKey;
     Move ttMove, move, excludedMove, bestMove;
     Depth extension, newDepth;
-    Value bestValue, value, ttValue, eval, maxValue, probCutBeta;
+    Value bestValue, value, ttValue, eval, maxValue;
     bool givesCheck, improving, priorCapture, singularQuietLMR;
     bool capture, moveCountPruning, ttCapture;
     Piece movedPiece;
@@ -836,72 +836,7 @@ namespace {
         && !ttMove)
         depth -= 2;
 
-    probCutBeta = beta + 168 - 61 * improving;
-
-    // Step 11. ProbCut (~10 Elo)
-    // If we have a good enough capture (or queen promotion) and a reduced search returns a value
-    // much above beta, we can (almost) safely prune the previous move.
-    if (   !PvNode
-        &&  depth > 3
-        &&  abs(beta) < VALUE_TB_WIN_IN_MAX_PLY
-        // if value from transposition table is lower than probCutBeta, don't attempt probCut
-        // there and in further interactions with transposition table cutoff depth is set to depth - 3
-        // because probCut search has depth set to depth - 4 but we also do a move before it
-        // so effective depth is equal to depth - 3
-        && !(   tte->depth() >= depth - 3
-             && ttValue != VALUE_NONE
-             && ttValue < probCutBeta))
-    {
-        assert(probCutBeta < VALUE_INFINITE);
-
-        MovePicker mp(pos, ttMove, probCutBeta - ss->staticEval, &captureHistory);
-
-        while ((move = mp.next_move()) != MOVE_NONE)
-            if (move != excludedMove && pos.legal(move))
-            {
-                assert(pos.capture_stage(move));
-
-                ss->currentMove = move;
-                ss->continuationHistory = &thisThread->continuationHistory[ss->inCheck]
-                                                                          [true]
-                                                                          [pos.moved_piece(move)]
-                                                                          [to_sq(move)];
-
-                pos.do_move(move, st);
-
-                // Perform a preliminary qsearch to verify that the move holds
-                value = -qsearch<NonPV>(pos, ss+1, -probCutBeta, -probCutBeta+1);
-
-                // If the qsearch held, perform the regular search
-                if (value >= probCutBeta)
-                    value = -search<NonPV>(pos, ss+1, -probCutBeta, -probCutBeta+1, depth - 4, !cutNode);
-
-                pos.undo_move(move);
-
-                if (value >= probCutBeta)
-                {
-                    // Save ProbCut data into transposition table
-                    tte->save(posKey, value_to_tt(value, ss->ply), ss->ttPv, BOUND_LOWER, depth - 3, move, ss->staticEval);
-                    return value;
-                }
-            }
-
-        Eval::NNUE::hint_common_parent_position(pos);
-    }
-
 moves_loop: // When in check, search starts here
-
-    // Step 12. A small Probcut idea, when we are in check (~4 Elo)
-    probCutBeta = beta + 413;
-    if (   ss->inCheck
-        && !PvNode
-        && ttCapture
-        && (tte->bound() & BOUND_LOWER)
-        && tte->depth() >= depth - 4
-        && ttValue >= probCutBeta
-        && abs(ttValue) <= VALUE_KNOWN_WIN
-        && abs(beta) <= VALUE_KNOWN_WIN)
-        return probCutBeta;
 
     const PieceToHistory* contHist[] = { (ss-1)->continuationHistory, (ss-2)->continuationHistory,
                                           nullptr                   , (ss-4)->continuationHistory,
