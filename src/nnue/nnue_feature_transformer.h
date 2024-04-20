@@ -378,6 +378,14 @@ class FeatureTransformer {
         hint_common_access_for_perspective<BLACK>(pos, psqtOnly);
     }
 
+    void init_finny_entry(FinnyEntry& entry) {
+        assert(HalfDimensions == TransformedFeatureDimensionsBig);
+
+        std::memcpy(entry.acc.accumulation[WHITE], biases, HalfDimensions * sizeof(BiasType));
+        std::memcpy(entry.acc.accumulation[BLACK], biases, HalfDimensions * sizeof(BiasType));
+        std::memset(entry.acc.psqtAccumulation, 0, sizeof(entry.acc.psqtAccumulation));
+    }
+
    private:
     template<Color Perspective>
     [[nodiscard]] std::pair<StateInfo*, StateInfo*>
@@ -652,7 +660,155 @@ class FeatureTransformer {
     }
 
     template<Color Perspective>
+    void update_accumulator_refresh_finny(Position& pos, bool psqtOnly) const {
+
+        assert(HalfDimensions == TransformedFeatureDimensionsBig);
+
+#ifdef VECTOR
+        // Gcc-10.2 unnecessarily spills AVX2 registers if this array
+        // is defined in the VECTOR code below, once in each branch
+        vec_t      acc[NumRegs];
+        psqt_vec_t psqt[NumPsqtRegs];
+#endif
+
+        Square   ksq = pos.square<KING>(Perspective);
+        FinnyEntry& entry = pos.finnyTable[ksq];
+
+        int16_t* entryAccumulation = entry.acc.accumulation[Perspective];
+        int32_t* entryPsqtAccumulation = entry.acc.psqtAccumulation[Perspective];
+
+        // Refresh the accumulator
+        // Could be extracted to a separate function because it's done in 2 places,
+        // but it's unclear if compilers would correctly handle register allocation.
+        auto& accumulator                     = pos.state()->*accPtr;
+        accumulator.computed[Perspective]     = true;
+        accumulator.computedPSQT[Perspective] = true;
+
+        FeatureSet::IndexList removed, added;
+        for (Color c = WHITE; c <= BLACK; c = Color(int(c)+1)) {
+            for (PieceType pt = PAWN; pt <= KING; ++pt) {
+                const Piece piece = make_piece(c, pt);
+                const Bitboard oldBB = entry.byColorBB[Perspective][c] & entry.byTypeBB[Perspective][pt];
+                const Bitboard newBB = pos.pieces(c, pt);
+                Bitboard toRemove = oldBB & ~newBB;
+                Bitboard toAdd = newBB & ~oldBB;
+
+                while (toRemove) {
+                    Square sq = pop_lsb(toRemove);
+                    removed.push_back(FeatureSet::make_index<Perspective>(sq, piece, ksq));
+                }
+                while (toAdd) {
+                    Square sq = pop_lsb(toAdd);
+                    added.push_back(FeatureSet::make_index<Perspective>(sq, piece, ksq));
+                }
+            }
+        }
+
+#ifdef VECTOR
+
+        for (IndexType j = 0; j < HalfDimensions / TileHeight; ++j)
+        {
+            auto entryTile = reinterpret_cast<vec_t*>(&entryAccumulation[j * TileHeight]);
+            for (IndexType k = 0; k < NumRegs; ++k)
+                acc[k] = entryTile[k];
+
+            for (int i = 0; i < int(added.size()); ++i)
+            {
+                IndexType       index  = added[i];
+                const IndexType offset = HalfDimensions * index + j * TileHeight;
+                auto            column = reinterpret_cast<const vec_t*>(&weights[offset]);
+
+                for (unsigned k = 0; k < NumRegs; ++k)
+                    acc[k] = vec_add_16(acc[k], column[k]);
+            }
+            for (int i = 0; i < int(removed.size()); ++i)
+            {
+                IndexType       index  = removed[i];
+                const IndexType offset = HalfDimensions * index + j * TileHeight;
+                auto            column = reinterpret_cast<const vec_t*>(&weights[offset]);
+
+                for (unsigned k = 0; k < NumRegs; ++k)
+                    acc[k] = vec_sub_16(acc[k], column[k]);
+            }
+
+            for (IndexType k = 0; k < NumRegs; k++)
+                vec_store(&entryTile[k], acc[k]);
+        }
+
+        for (IndexType j = 0; j < PSQTBuckets / PsqtTileHeight; ++j)
+        {
+            auto entryTilePsqt = reinterpret_cast<psqt_vec_t*>(&entryPsqtAccumulation[j * PsqtTileHeight]);
+            for (std::size_t k = 0; k < NumPsqtRegs; ++k)
+                psqt[k] = entryTilePsqt[k];
+
+            for (int i = 0; i < int(added.size()); ++i)
+            {
+                IndexType       index  = added[i];
+                const IndexType offset = PSQTBuckets * index + j * PsqtTileHeight;
+                auto columnPsqt        = reinterpret_cast<const psqt_vec_t*>(&psqtWeights[offset]);
+
+                for (std::size_t k = 0; k < NumPsqtRegs; ++k)
+                    psqt[k] = vec_add_psqt_32(psqt[k], columnPsqt[k]);
+            }
+            for (int i = 0; i < int(removed.size()); ++i)
+            {
+                IndexType       index  = removed[i];
+                const IndexType offset = PSQTBuckets * index + j * PsqtTileHeight;
+                auto columnPsqt        = reinterpret_cast<const psqt_vec_t*>(&psqtWeights[offset]);
+
+                for (std::size_t k = 0; k < NumPsqtRegs; ++k)
+                    psqt[k] = vec_sub_psqt_32(psqt[k], columnPsqt[k]);
+            }
+
+            for (std::size_t k = 0; k < NumPsqtRegs; ++k)
+                vec_store_psqt(&entryTilePsqt[k], psqt[k]);
+        }
+
+#else
+
+        for (const auto index : added)
+        {
+            const IndexType offset = HalfDimensions * index;
+            for (IndexType j = 0; j < HalfDimensions; ++j)
+                entry.acc.accumulation[Perspective][j] += weights[offset + j];
+
+            for (std::size_t k = 0; k < PSQTBuckets; ++k)
+                entry.acc.psqtAccumulation[Perspective][k] +=
+                psqtWeights[index * PSQTBuckets + k];
+        }
+        for (const auto index : removed)
+        {
+            const IndexType offset = HalfDimensions * index;
+            for (IndexType j = 0; j < HalfDimensions; ++j)
+                entry.acc.accumulation[Perspective][j] -= weights[offset + j];
+
+            for (std::size_t k = 0; k < PSQTBuckets; ++k)
+                entry.acc.psqtAccumulation[Perspective][k] -=
+                psqtWeights[index * PSQTBuckets + k];
+        }
+
+#endif
+
+        std::memcpy(accumulator.psqtAccumulation[Perspective],
+                    entry.acc.psqtAccumulation[Perspective],
+                    sizeof(int32_t) * PSQTBuckets);
+
+        std::memcpy(accumulator.accumulation[Perspective],
+                    entry.acc.accumulation[Perspective],
+                    sizeof(int16_t) * HalfDimensions);
+
+        std::memcpy(entry.byColorBB[Perspective], pos.finny_byColorBB(), 2 * sizeof(Bitboard));
+        std::memcpy(entry.byTypeBB[Perspective], pos.finny_byTypeBB(), 8 * sizeof(Bitboard));
+    }
+
+    template<Color Perspective>
     void update_accumulator_refresh(const Position& pos, bool psqtOnly) const {
+
+        if (HalfDimensions == Eval::NNUE::TransformedFeatureDimensionsBig) {
+            update_accumulator_refresh_finny<Perspective>((Position&)pos, psqtOnly);
+            return;
+        }
+
 #ifdef VECTOR
         // Gcc-10.2 unnecessarily spills AVX2 registers if this array
         // is defined in the VECTOR code below, once in each branch
