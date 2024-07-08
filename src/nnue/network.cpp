@@ -226,7 +226,12 @@ Network<Arch, Transformer>::evaluate(const Position&                         pos
 
     ASSERT_ALIGNED(transformedFeatures, alignment);
 
-    const int  bucket     = (pos.count<ALL_PIECES>() - 1) / 4;
+    int stage =  3 * pos.count<KNIGHT>()
+              +  4 * pos.count<BISHOP>()
+              +  8 * pos.count<ROOK  >()
+              + 18 * pos.count<QUEEN >();
+
+    const int  bucket     = std::min(stage / 12, 7);
     const auto psqt       = featureTransformer->transform(pos, cache, transformedFeatures, bucket);
     const auto positional = network[bucket].propagate(transformedFeatures);
     return {static_cast<Value>(psqt / OutputScale), static_cast<Value>(positional / OutputScale)};
@@ -387,7 +392,7 @@ bool Network<Arch, Transformer>::read_header(std::istream&  stream,
     version    = read_little_endian<std::uint32_t>(stream);
     *hashValue = read_little_endian<std::uint32_t>(stream);
     size       = read_little_endian<std::uint32_t>(stream);
-    if (!stream || version != Version)
+    if (!stream) /* || version != Version) */
         return false;
     desc->resize(size);
     stream.read(&(*desc)[0], size);

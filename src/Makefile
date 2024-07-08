@@ -956,20 +956,20 @@ define fetch_network
 endef
 
 # set up shell variables for the net stuff
-define netvariables
-$(eval nnuenet := $(shell grep $(1) evaluate.h | grep define | sed 's/.*\(nn-[a-z0-9]\{12\}.nnue\).*/\1/'))
-$(eval nnuedownloadurl1 := https://tests.stockfishchess.org/api/nn/$(nnuenet))
-$(eval nnuedownloadurl2 := https://github.com/official-stockfish/networks/raw/master/$(nnuenet))
-$(eval curl_or_wget := $(shell if hash curl 2>/dev/null; then echo "curl -skL"; elif hash wget 2>/dev/null; then echo "wget -qO-"; fi))
-$(eval shasum_command := $(shell if hash shasum 2>/dev/null; then echo "shasum -a 256 "; elif hash sha256sum 2>/dev/null; then echo "sha256sum "; fi))
-endef
-
-# evaluation network (nnue)
-net:
-	$(call netvariables, EvalFileDefaultNameBig)
-	$(call fetch_network)
-	$(call netvariables, EvalFileDefaultNameSmall)
-	$(call fetch_network)
+# define netvariables
+# $(eval nnuenet := $(shell grep $(1) evaluate.h | grep define | sed 's/.*\(nn-[a-z0-9]\{12\}.nnue\).*/\1/'))
+# $(eval nnuedownloadurl1 := https://tests.stockfishchess.org/api/nn/$(nnuenet))
+# $(eval nnuedownloadurl2 := https://github.com/official-stockfish/networks/raw/master/$(nnuenet))
+# $(eval curl_or_wget := $(shell if hash curl 2>/dev/null; then echo "curl -skL"; elif hash wget 2>/dev/null; then echo "wget -qO-"; fi))
+# $(eval shasum_command := $(shell if hash shasum 2>/dev/null; then echo "shasum -a 256 "; elif hash sha256sum 2>/dev/null; then echo "sha256sum "; fi))
+# endef
+#
+# # evaluation network (nnue)
+# net:
+# 	$(call netvariables, EvalFileDefaultNameBig)
+# 	$(call fetch_network)
+# 	$(call netvariables, EvalFileDefaultNameSmall)
+# 	$(call fetch_network)
 
 format:
 	$(CLANG-FORMAT) -i $(SRCS) $(HEADERS) -style=file
