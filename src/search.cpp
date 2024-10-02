@@ -1237,11 +1237,6 @@ moves_loop:  // When in check, search starts here
         assert(value > -VALUE_INFINITE && value < VALUE_INFINITE);
 
         // Step 20. Check for a new best move
-        // Finished searching the move. If a stop occurred, the return value of
-        // the search cannot be trusted, and we return immediately without updating
-        // best move, principal variation nor transposition table.
-        if (threads.stop.load(std::memory_order_relaxed))
-            return VALUE_ZERO;
 
         if (rootNode)
         {
