@@ -115,9 +115,10 @@ void UCIEngine::loop() {
             setoption(is);
         else if (token == "go")
         {
-            // send info strings after the go command is sent for old GUIs and python-chess
-            print_info_string(engine.numa_config_information_as_string());
-            print_info_string(engine.thread_binding_information_as_string());
+            // AGE: Do not do any excess reporting
+            // // send info strings after the go command is sent for old GUIs and python-chess
+            // print_info_string(engine.numa_config_information_as_string());
+            // print_info_string(engine.thread_binding_information_as_string());
             go(is);
         }
         else if (token == "position")
