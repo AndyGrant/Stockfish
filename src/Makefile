@@ -37,13 +37,6 @@ else ifeq ($(COMP),mingw)
 	endif
 endif
 
-### Executable name
-ifeq ($(target_windows),yes)
-	EXE = stockfish.exe
-else
-	EXE = stockfish
-endif
-
 ### Installation dir definitions
 PREFIX = /usr/local
 BINDIR = $(PREFIX)/bin
@@ -851,6 +844,13 @@ endif
 ### Section 4. Public Targets
 ### ==========================================================================
 
+
+CXXFLAGS += -DEvalFileDefaultNameBig=\"$(EVALFILE)\"
+CXXFLAGS += -DEvalFileDefaultNameSmall=\"nn-37f18f62d772.nnue\"
+
+build: config-sanity
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) all
+
 help:
 	@echo "" && \
 	echo "To compile stockfish, type: " && \
@@ -937,9 +937,6 @@ endif
 analyze: net config-sanity objclean
 	$(MAKE) -k ARCH=$(ARCH) COMP=$(COMP) $(OBJS)
 
-build: net config-sanity
-	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) all
-
 profile-build: net config-sanity objclean profileclean
 	@echo ""
 	@echo "Step 1/4. Building instrumented executable ..."
@@ -999,7 +996,7 @@ default:
 
 all: $(EXE) .depend
 
-config-sanity: net
+config-sanity:
 	@echo ""
 	@echo "Config:" && \
 	echo "debug: '$(debug)'" && \
