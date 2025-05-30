@@ -130,8 +130,10 @@ void UCI::loop() {
 
         else if (token == "setoption")
             setoption(is);
-        else if (token == "go")
+        else if (token == "go") {
+            search_clear();
             go(pos, is, states);
+        }
         else if (token == "position")
             position(pos, is, states);
         else if (token == "ucinewgame")
