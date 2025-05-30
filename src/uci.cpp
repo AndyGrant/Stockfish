@@ -122,8 +122,10 @@ void UCIEngine::loop() {
 
         else if (token == "setoption")
             setoption(is);
-        else if (token == "go")
+        else if (token == "go") {
+            engine.search_clear();
             go(is);
+        }
         else if (token == "position")
             position(is);
         else if (token == "ucinewgame")
