@@ -187,17 +187,6 @@ void Network::verify(const std::function<void(std::string_view)>& f,
 
         exit(EXIT_FAILURE);
     }
-
-    if (f)
-    {
-        usize size = sizeof(featureTransformer) + sizeof(NetworkArchitecture) * LayerStacks;
-        f("NNUE evaluation using " + evalfilePath.string() + " ("
-          + std::to_string(size / (1024 * 1024)) + "MiB, ("
-          + std::to_string(featureTransformer.InputDimensions) + ", "
-          + std::to_string(network[0].TransformedFeatureDimensions) + ", "
-          + std::to_string(network[0].FC_0_OUTPUTS) + ", " + std::to_string(network[0].FC_1_OUTPUTS)
-          + ", 1))");
-    }
 }
 
 

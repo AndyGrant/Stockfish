@@ -59,13 +59,14 @@ else ifeq ($(COMP),mingw)
 	endif
 endif
 
-### Executable name
+### Executable name. Assigned conditionally so that an EXE passed through the
+### environment (as OpenBench does) is honoured instead of being overwritten.
 ifeq ($(target_windows),yes)
-	EXE = stockfish.exe
+	EXE ?= stockfish.exe
 else ifneq (,$(findstring wasm,$(ARCH)))
-	EXE = stockfish.js
+	EXE ?= stockfish.js
 else
-	EXE = stockfish
+	EXE ?= stockfish
 endif
 
 ### Installation dir definitions
@@ -1000,9 +1001,20 @@ ifeq ($(optimize), yes)
 	endif
 endif
 
+### 3.12 Network selection
+# OpenBench hands the engine its network out-of-band and points EVALFILE at it.
+# When set, it overrides the EvalFileDefaultName fallback in evaluate.h, which
+# is what the embedding (INCBIN / #embed) and the default EvalFile option read.
+ifneq ($(EVALFILE),)
+	CXXFLAGS += -DEvalFileDefaultName=\"$(EVALFILE)\"
+endif
+
 ### ==========================================================================
 ### Section 4. Public Targets
 ### ==========================================================================
+
+# OpenBench invokes a bare `make`, so building must be the default goal.
+.DEFAULT_GOAL := build
 
 help:
 	@echo "" && \
@@ -1097,7 +1109,7 @@ analyze: net config-sanity objclean
 	$(MAKE) -k ARCH=$(ARCH) COMP=$(COMP) $(OBJS)
 
 ifeq ($(UNIVERSAL_BUILD),false)
-build: net config-sanity
+build: config-sanity
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) all
 
 profile-build: net config-sanity objclean profileclean
@@ -1240,7 +1252,7 @@ format:
 
 all: $(EXE) .depend
 
-config-sanity: net
+config-sanity:
 	@echo ""
 	@echo "Config:" && \
 	echo "debug: '$(debug)'" && \
