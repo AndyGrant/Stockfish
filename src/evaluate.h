@@ -33,7 +33,11 @@ namespace Eval {
 // for the build process (profile-build and fishtest) to work. Do not change the
 // name of the macro or the location where this macro is defined, as it is used
 // in the Makefile/Fishtest.
-#define EvalFileDefaultName "nn-ab28990d4ea3.nnue"
+// Guarded so that a -DEvalFileDefaultName=... from the Makefile's EVALFILE
+// (used by OpenBench, which supplies the network itself) takes precedence.
+#ifndef EvalFileDefaultName
+    #define EvalFileDefaultName "nn-ab28990d4ea3.nnue"
+#endif
 
 namespace NNUE {
 class Network;
