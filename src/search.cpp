@@ -70,8 +70,6 @@ using namespace Search;
 
 namespace {
 
-constexpr u64 NODES_LIMIT_OUTPUT = 10'000'000;
-
 constexpr int SEARCHEDLIST_CAPACITY = 32;
 using SearchedList                  = ValueList<Move, SEARCHEDLIST_CAPACITY>;
 
@@ -223,7 +221,7 @@ void Search::Worker::start_searching() {
 
     // Main thread starts non-main threads, and begins own search
     threads.start_searching();
-    bool uciPvSent = iterative_deepening();
+    iterative_deepening();
 
     // When we reach the maximum depth, we can arrive here without a raise of
     // threads.stop. However, if we are pondering or in an infinite search,
@@ -256,13 +254,11 @@ void Search::Worker::start_searching() {
     main_manager()->bestPreviousScore        = bestThread->rootMoves[0].score;
     main_manager()->bestPreviousAverageScore = bestThread->rootMoves[0].averageScore;
 
-    if (bestThread->rootMoves[0].pv.size() == 1
-        && bestThread->rootMoves[0].extract_ponder_from_tt(tt, rootPos))
-        uciPvSent = false;
+    if (bestThread->rootMoves[0].pv.size() == 1)
+        bestThread->rootMoves[0].extract_ponder_from_tt(tt, rootPos);
 
-    // Send PV info if it has changed since last output in iterative_deepening()
-    if (!uciPvSent || bestThread != this)
-        main_manager()->output_pv(*bestThread, threads, tt, bestThread->rootDepth);
+    // Always send the PV here, since every other output location is removed.
+    main_manager()->output_pv(*bestThread, threads, tt, bestThread->rootDepth);
 
     // In rare cases, output_pv() may change the ponder move through syzygy_extend_pv()
     std::string ponder;
@@ -276,7 +272,7 @@ void Search::Worker::start_searching() {
 // Main iterative deepening loop. It calls search() repeatedly with increasing
 // depth until the allocated thinking time has been consumed, the user stops
 // the search, or the maximum search depth is reached.
-bool Search::Worker::iterative_deepening() {
+void Search::Worker::iterative_deepening() {
 
     SearchManager* mainThread = (is_mainthread() ? main_manager() : nullptr);
 
@@ -327,10 +323,9 @@ bool Search::Worker::iterative_deepening() {
 
     multiPV = std::min(multiPV, rootMoves.size());
 
-    int  searchAgainCounter = 0;
-    int  failHighRecovery   = 0;
-    u64  totalEffort        = 0;
-    bool uciPvSent          = false;
+    int searchAgainCounter = 0;
+    int failHighRecovery   = 0;
+    u64 totalEffort        = 0;
 
     lowPlyHistory.fill(102);
 
@@ -346,10 +341,6 @@ bool Search::Worker::iterative_deepening() {
 
         // Do not tune these values. They are not intended for playing strength.
         int seekMateThreshold = 750 + 220000 / (rootDepth * rootDepth);
-
-        // Signal the start of a new iteration
-        if (mainThread)
-            uciPvSent = false;
 
         // Save the last iteration's scores before the first PV line is searched and
         // all the move scores except the (new) PV are set to -VALUE_INFINITE.
@@ -416,13 +407,6 @@ bool Search::Worker::iterative_deepening() {
                 // the previous iteration.
                 if (threads.stop)
                     break;
-
-                // When failing high/low give some update before a re-search. To avoid
-                // excessive output that could hang GUIs like Fritz 19, only start
-                // at nodes > 10M (rather than depth N, which can be reached quickly).
-                if (mainThread && multiPV == 1 && (bestValue <= alpha || bestValue >= beta)
-                    && nodes > NODES_LIMIT_OUTPUT)
-                    main_manager()->output_pv(*this, threads, tt, rootDepth);
 
                 // In case of failing low/high increase aspiration window and re-search,
                 // otherwise exit the loop.
@@ -502,14 +486,8 @@ bool Search::Worker::iterative_deepening() {
                         rootMoves[i].inexactLower = true;
             }
 
-            // Sort the PV lines searched so far and update the GUI
+            // Sort the PV lines searched so far
             std::stable_sort(rootMoves.begin() + pvFirst, rootMoves.begin() + pvIdx + 1);
-
-            if (mainThread && !threads.stop && (pvIdx + 1 == multiPV || nodes > NODES_LIMIT_OUTPUT))
-            {
-                main_manager()->output_pv(*this, threads, tt, rootDepth);
-                uciPvSent = (pvIdx + 1 == multiPV);
-            }
 
             if (mainThread && !pvIdx)
                 totalEffort = u64(nodes);
@@ -553,9 +531,6 @@ bool Search::Worker::iterative_deepening() {
                 rootMoves[0].score = rootMoves[0].uciScore = lastBestMoveScore;
                 rootMoves[0].pv                            = lastBestMovePV;
                 rootMoves[0].unset_inexact();
-
-                if (mainThread)
-                    uciPvSent = false;
             }
             // For an aborted d1 search we label the loss score as inexact
             else if (abortedLossSearch)
@@ -636,7 +611,7 @@ bool Search::Worker::iterative_deepening() {
     }
 
     if (!mainThread)
-        return false;
+        return;
 
     mainThread->previousTimeReduction = timeReduction;
 
@@ -650,11 +625,8 @@ bool Search::Worker::iterative_deepening() {
             std::swap(rootMoves[0], *std::find(rootMoves.begin(), rootMoves.end(), pick));
             if (is_loss(rootMoves[0].score) && rootMoves[0].score < bestScore)
                 rootMoves[0].inexactLower = true;
-            uciPvSent = false;
         }
     }
-
-    return uciPvSent;
 }
 
 void Search::Worker::do_move(
@@ -1154,9 +1126,6 @@ moves_loop:  // When in check, search starts here
 
         ss->moveCount = ++moveCount;
 
-        if (rootNode && is_mainthread() && nodes > NODES_LIMIT_OUTPUT)
-            main_manager()->updates.onIter(
-              {depth, UCIEngine::move(move, pos.is_chess960()), moveCount + pvIdx});
         if (PvNode)
             (ss + 1)->pv = nullptr;
 
@@ -2150,7 +2119,7 @@ void syzygy_extend_pv(const OptionsMap&         options,
                       const usize               multiPV) {
 
     auto t_start      = std::chrono::steady_clock::now();
-    int  moveOverhead = int(options["Move Overhead"]);
+    int  moveOverhead = int(options["MoveOverhead"]);
     bool rule50       = bool(options["Syzygy50MoveRule"]);
 
     // Do not use more than moveOverhead / 2 ms, if time management is active.
@@ -2272,7 +2241,7 @@ void syzygy_extend_pv(const OptionsMap&         options,
     // Inform if we couldn't get a full extension in time
     if (time_abort())
         sync_cout
-          << "info string Syzygy based PV extension requires more time, increase Move Overhead as needed."
+          << "info string Syzygy based PV extension requires more time, increase MoveOverhead as needed."
           << sync_endl;
 }
 
